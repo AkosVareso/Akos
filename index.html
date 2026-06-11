@@ -261,9 +261,10 @@
     </div>
 </div>
 
-<!-- Load Wallet Adapter -->
-<script src="wallet-adapter.js"></script>
+<!-- Load Solana Web3.js FIRST -->
 <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+<!-- Load Wallet Adapter SECOND (after Solana Web3.js) -->
+<script src="wallet-adapter.js"></script>
 <script>
 // Backend URL (replace with your actual backend)
 const BACKEND_URL = 'https://ujbackend.onrender.com';
